@@ -4,7 +4,7 @@ This repository contains the codes related to the Latin American Robotics Compet
 
 This category is based on educational robotic kits. All competitors need to choose one kit and we aren't allowed to used anything beyond that. In both years we used the Lego Mindstorms kit. 
 
-Every year the IEEE releases a new rule for a new challenge. Nonetheless, the essence of this category is to use **two autonomous robots that need to cooperate to solve a simulated problem**. You can check the competition's rules in [2010](https://github.com/paaatcha/IEEE-SEK/blob/master/larc2011/rules_sek_2011.pdf) and [2011](https://github.com/paaatcha/IEEE-SEK/blob/master/larc2010/rules_sek_2010.pdf). In 2010 the competition took place in São Paulo, Brazil and in 2011 in Bogotá, Colombia. In both, **we got the 1st place** out of more than 20 teams.
+Every year the IEEE releases a new rule for a new challenge. Nonetheless, the essence of this category is to use **two autonomous robots that need to cooperate to solve a simulated problem**. You can check the competition's rules in [2010](https://github.com/paaatcha/IEEE-SEK/blob/master/larc2011/rules_sek_2011.pdf) and [2011](https://github.com/paaatcha/IEEE-SEK/blob/master/larc2010/rules_sek_2010.pdf). In 2010 the competition took place in São Paulo, Brazil and in 2011 in Bogotá, Colombia. In both competitions, **we got the 1st place** out of more than 20 teams.
 
 The robots used light, touch and compass sensors. In addition, the used a bluetooth connection in order to communicate with each other. We programed them using a C-based-language called NXC.
 
