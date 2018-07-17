@@ -1,0 +1,884 @@
+#include "NXCDefs.h"
+
+#define MOTORES OUT_ABC
+#define AMBAS_AS_DUAS_RODAS  OUT_AB
+#define RODA_DIREITA  OUT_A
+#define RODA_ESQUERDA  OUT_B
+#define GARRA OUT_C
+
+#define SENSOR_LUZ_BAIXO IN_4
+#define SENSOR_LUZ_FRENTE IN_1
+#define BUSSOLA        IN_3
+
+#define preto 62
+#define vermelho 45
+#define azul 23
+#define verde 30
+
+#define canoVerde 1
+#define canoVermelho 2
+
+#define rotacaoMeio 170
+#define rotacaoPouco 100
+#define rotacaoPouquinho 10
+#define tempoAndaMeio 1700
+
+#define norte 1
+#define leste 2
+#define sul 3
+#define oeste 4
+
+#define potenciaNormal 60
+#define potenciaRio 40
+#define potenciaGarra 25
+#define potenciaRotacao 70
+
+#define casoT rio_inicio.coluna == 2
+#define casoA rio_inicio.coluna == 5
+#define casoR rio_inicio.coluna == 6
+
+#define vm 1
+#define vd 0
+
+     int norte_vec[] =  {138,138,140,140,140,139,141,142,140,000,
+                         138,139,141,141,140,139,140,141,141,000,
+                         138,139,140,140,141,139,141,143,144,143,
+                         137,140,140,141,140,140,140,141,141,142,
+                         138,000,000,000,000,000,000,000,000,000,
+                         150,153,153,153,153,150,151,154,153,154,
+                         150,150,153,154,152,148,148,150,153,153,
+                         000,150,152,154,150,148,147,150,151,000,
+                         000,150,151,151,150,147,147,148,150,000};
+
+     int sul_vec[] =    {022,022,023,024,024,025,027,030,030,000,
+                         022,022,023,025,024,022,025,027,029,000,
+                         021,021,023,023,022,022,024,027,028,027,
+                         022,023,023,024,023,022,023,025,028,027,
+                         019,000,000,000,000,000,000,000,000,000,
+                         358,359,000,000,358,355,356,357,359,359,
+                         357,359,359,359,359,356,356,357,358,358,
+                         000,359,359,000,358,356,357,357,358,000,
+                         000,359,359,359,357,356,356,357,359,000};
+
+     int leste_vec[] =  {240,245,248,248,247,245,251,254,256,000,
+                         240,246,249,248,248,248,250,254,253,000
+                         240,243,248,250,245,248,249,255,257,256,
+                         248,251,252,256,253,251,253,256,252,258,
+                         239,000,000,000,000,000,000,000,000,000,
+                         274,276,278,278,276,276,275,277,279,280,
+                         275,278,277,278,276,273,273,274,276,278,
+                         000,276,277,278,276,271,273,274,276,277,
+                         000,276,277,277,276,274,274,277,277,000};
+
+     int oeste_vec[] =  {82,82,83,84,83,84,85,87,86,00,
+                         82,82,83,84,83,83,85,87,86,00,
+                         82,83,83,84,83,83,84,86,87,87,
+                         82,83,84,84,83,84,84,86,86,87,
+                         83,00,00,00,00,00,00,00,00,00,
+                         66,67,69,70,69,68,67,68,70,71,
+                         68,68,69,70,68,67,67,69,70,70,
+                         00,69,69,69,67,65,66,68,69,00,
+                         00,69,70,71,68,68,66,69,68,00};
+
+struct pos{
+        int linha;
+        int coluna;
+        int direcao;
+};
+pos rio_inicio;
+pos rio_final;
+pos posicao;
+int kount;
+
+struct cano{
+        pos posic;
+        int cor;
+        int status;
+};
+
+cano vetorCano[12];
+cano vetorVazamento[11];
+
+int retorna_setpoint(){                /*retorna o setpoint da posicao atual do robo*/
+    switch (posicao.direcao){
+           case norte:return norte_vec[10*posicao.linha+posicao.coluna];
+           case leste:return leste_vec[10*posicao.linha+posicao.coluna];
+           case oeste:return oeste_vec[10*posicao.linha+posicao.coluna];
+           case sul:return sul_vec[10*posicao.linha+posicao.coluna];
+    }
+}
+
+// Calula parada da bussola pra nao da merda
+int diffAng(int a1, int a2)
+{
+    int diff = (a1 - a2)%360;
+    if(diff>180){
+          diff = diff -360;
+    }else{
+          if(diff<-180)
+               diff=diff+360;
+    }
+    return diff;
+}
+
+void imprime_valores()
+{
+        if(CurrentTick()%100<10){
+
+                 ClearScreen();
+        }
+
+        TextOut(0, LCD_LINE1, "Linha: ");
+        NumOut(60, LCD_LINE1, posicao.linha);
+        TextOut(0, LCD_LINE2, "Coluna: ");
+        NumOut(60, LCD_LINE2, posicao.coluna);
+        TextOut(0, LCD_LINE3, "Direcao: ");
+        NumOut(60, LCD_LINE3, posicao.direcao);
+        TextOut(0, LCD_LINE5, "Bussola: ");
+        NumOut(60, LCD_LINE5, SensorHTCompass(BUSSOLA));
+        TextOut(0, LCD_LINE6, "Luz Frente: ");
+        NumOut(60, LCD_LINE6, Sensor(SENSOR_LUZ_FRENTE));
+        TextOut(0, LCD_LINE6, "Luz Baixo: ");
+        NumOut(60, LCD_LINE6, Sensor(SENSOR_LUZ_BAIXO));
+}
+
+void andaPraFrente(int tipo)                  /*anda ateh o meio do quadrado à frente do robo*/
+{
+    int setpoint = retorna_setpoint();// retornando o valor de referencia
+
+    int passouDaLinha = 0;
+    unsigned long rotacaoLinha;
+    int erro;
+
+    while(true)
+    {
+        imprime_valores();
+
+         erro = diffAng(SensorHTCompass(BUSSOLA),setpoint);
+
+         OnFwd(RODA_ESQUERDA,potenciaNormal-1*erro);
+         OnFwd(RODA_DIREITA,potenciaNormal+1*erro);
+
+         if(Sensor(SENSOR_LUZ_BAIXO)<preto)
+         {
+               if(!passouDaLinha)
+               {
+                   switch (posicao.direcao)
+                   {
+                          case norte: posicao.linha = posicao.linha - 1; break;
+                          case leste: posicao.coluna = posicao.coluna + 1; break;
+                          case oeste: posicao.coluna = posicao.coluna - 1; break;
+                          case sul: posicao.linha = posicao.linha + 1; break;
+                   }
+                   setpoint=retorna_setpoint();
+
+                   passouDaLinha = 1;
+                   rotacaoLinha = MotorRotationCount(RODA_DIREITA);
+               }
+         }
+
+         if(passouDaLinha)
+         {
+               if(abs(MotorRotationCount(RODA_DIREITA)-rotacaoLinha)>tipo){
+                   Off(AMBAS_AS_DUAS_RODAS);
+                   break;
+               }
+         }
+     }
+}
+void andaPraTras(int tipo)                  /*anda ateh o meio do quadrado à frente do robo*/
+{
+    int setpoint = retorna_setpoint();// retornando o valor de referencia
+
+    int passouDaLinha = 0;
+    unsigned long rotacaoLinha;
+    int erro;
+
+    while(true)
+    {
+        imprime_valores();
+
+         erro = diffAng(SensorHTCompass(BUSSOLA),setpoint);
+
+         OnFwd(RODA_ESQUERDA,-potenciaNormal-1*erro);
+         OnFwd(RODA_DIREITA,-potenciaNormal+1*erro);
+
+         if(Sensor(SENSOR_LUZ_BAIXO)<preto)
+         {
+               if(!passouDaLinha)
+               {
+                   switch (posicao.direcao)
+                   {
+                          case norte: posicao.linha = posicao.linha + 1; break;
+                          case leste: posicao.coluna = posicao.coluna - 1; break;
+                          case oeste: posicao.coluna = posicao.coluna + 1; break;
+                          case sul: posicao.linha = posicao.linha - 1; break;
+                   }
+                   setpoint=retorna_setpoint();
+
+                   passouDaLinha = 1;
+                   rotacaoLinha = MotorRotationCount(RODA_DIREITA);
+               }
+         }
+
+         if(passouDaLinha)
+         {
+               if(abs(MotorRotationCount(RODA_DIREITA)-rotacaoLinha)>tipo){
+                   Off(AMBAS_AS_DUAS_RODAS);
+                   break;
+               }
+         }
+     }
+}
+void andaPraFrenteVerificandoRio()                  /*anda ateh o meio do quadrado à frente do robo*/
+{
+    int setpoint = retorna_setpoint();// retornando o valor de referencia
+
+    int passouDaLinha = 0;
+    unsigned long rotacaoLinha;
+    unsigned long rotacaoLinhaFinal;
+    unsigned long rotacoes;
+    int erro;
+    long atual, anterior;
+    int contador=0;
+    anterior = CurrentTick();
+    while(true)
+    {
+        imprime_valores();
+
+         erro = diffAng(SensorHTCompass(BUSSOLA),setpoint);
+
+         OnFwd(RODA_ESQUERDA,potenciaRio-1*erro);
+         OnFwd(RODA_DIREITA,potenciaRio+1*erro);
+
+         if ( Sensor(SENSOR_LUZ_FRENTE) <= azul )
+         {
+
+            rotacaoLinhaFinal = MotorRotationCount(RODA_DIREITA);
+            rotacoes = rotacaoLinhaFinal-rotacaoLinha;
+            andaPraTras(rotacaoMeio+30); // anda pra tras no quadrado de tras! falta tratar caso do rio ta na coluna 2
+
+
+            rio_inicio.linha = posicao.linha;
+            rio_inicio.coluna = posicao.coluna+1;
+
+            rio_final.linha = posicao.linha;
+            /* Bluetooth - esperando resposta do outro robo*/
+            rio_final.coluna = posicao.coluna+5;  /* Duto simples*/
+            break;
+         }
+
+         atual = CurrentTick();
+
+         if (atual - anterior > 140)
+         {
+                  if(Sensor(SENSOR_LUZ_BAIXO)<preto)
+                  {
+
+                          switch (posicao.direcao)
+                          {
+                                case norte: posicao.linha = posicao.linha - 1; break;
+                                case leste: posicao.coluna = posicao.coluna + 1; break;
+                                case oeste: posicao.coluna = posicao.coluna - 1; break;
+                                case sul: posicao.linha = posicao.linha + 1; break;
+                          }
+                          rotacaoLinha = MotorRotationCount(RODA_DIREITA);
+                  }
+              anterior = atual;
+          }
+     }
+}
+
+void andaRobado(int tipo,int setpoint)                  /*anda ateh o meio do quadrado à frente do robo*/
+{
+
+    int passouDaLinha = 0;
+    unsigned long rotacaoLinha;
+    int erro;
+
+    while(true)
+    {
+        imprime_valores();
+
+         erro = diffAng(SensorHTCompass(BUSSOLA),setpoint);
+
+         OnFwd(RODA_ESQUERDA,potenciaNormal-1*erro);
+         OnFwd(RODA_DIREITA,potenciaNormal+1*erro);
+
+         if(Sensor(SENSOR_LUZ_BAIXO)<preto)
+         {
+               if(!passouDaLinha)
+               {
+                   switch (posicao.direcao)
+                   {
+                          case norte: posicao.linha = posicao.linha - 1; break;
+                          case leste: posicao.coluna = posicao.coluna + 1; break;
+                          case oeste: posicao.coluna = posicao.coluna - 1; break;
+                          case sul: posicao.linha = posicao.linha + 1; break;
+                   }
+                   setpoint=retorna_setpoint();
+
+                   passouDaLinha = 1;
+                   rotacaoLinha = MotorRotationCount(RODA_DIREITA);
+               }
+
+         }
+
+
+         if(passouDaLinha)
+         {
+               if(abs(MotorRotationCount(RODA_DIREITA)-rotacaoLinha)>tipo){
+                   Off(AMBAS_AS_DUAS_RODAS);
+                   break;
+               }
+         }
+     }
+}
+
+int absMinMax (int erro){
+    if(abs(erro)>potenciaRotacao-15){
+         return potenciaRotacao-15;
+    }
+    else{
+         if(abs(erro)<25){
+              return 25;
+         }
+    }
+    return (abs(erro));
+}
+
+void giraDireita(int direcao)      /*Gira para a direcao (do robo) passada como parametro*/
+{
+
+    long tempoInicial = CurrentTick();
+    int setPoint;
+    int erro;
+    int giroerrado = 0;
+    switch (direcao)
+    {
+           case norte:setPoint = norte_vec[10*posicao.linha+posicao.coluna]; break;
+           case leste:setPoint = leste_vec[10*posicao.linha+posicao.coluna]; break;
+           case oeste:setPoint = oeste_vec[10*posicao.linha+posicao.coluna]; break;
+           case sul:setPoint = sul_vec[10*posicao.linha+posicao.coluna]; break;
+    }
+    erro=diffAng(SensorHTCompass(BUSSOLA),setPoint);
+     while(erro <= 0)                          //Problemas com o sul, porem se colocarmos !=setPoint as vezes o sensor passar reto
+     {
+          OnFwd(RODA_ESQUERDA,absMinMax(erro));
+          OnFwd(RODA_DIREITA,-absMinMax(erro));
+          erro=diffAng(SensorHTCompass(BUSSOLA),setPoint);
+     }
+     Off(AMBAS_AS_DUAS_RODAS);
+     posicao.direcao = direcao;
+}
+
+void giraEsquerda(int direcao)      /*Gira para a direcao (do robo) passada como parametro*/
+{
+    long tempoInicial = CurrentTick();
+    int setPoint;
+    int erro;
+    int giroerrado = 0;
+    switch (direcao)
+    {
+           case norte:setPoint = norte_vec[10*posicao.linha+posicao.coluna]; break;
+           case leste:setPoint = leste_vec[10*posicao.linha+posicao.coluna]; break;
+           case oeste:setPoint = oeste_vec[10*posicao.linha+posicao.coluna]; break;
+           case sul:setPoint = sul_vec[10*posicao.linha+posicao.coluna]; break;
+    }
+
+     erro=diffAng(SensorHTCompass(BUSSOLA),setPoint);
+     while(erro >= 0)                          //Problemas com o sul, porem se colocarmos !=setPoint as vezes o sensor passar reto
+     {
+         OnFwd(RODA_ESQUERDA,-absMinMax(erro));
+         OnFwd(RODA_DIREITA,absMinMax(erro));
+         erro=diffAng(SensorHTCompass(BUSSOLA),setPoint);
+     }
+     Off(AMBAS_AS_DUAS_RODAS);
+     posicao.direcao = direcao;
+}
+
+void giraDirecao(int direcao)
+{
+     if(posicao.direcao-direcao==-1 || posicao.direcao-direcao==3)
+     {
+         giraDireita(direcao);
+     }
+     else
+     {
+         giraEsquerda(direcao);
+     }
+     Off(AMBAS_AS_DUAS_RODAS);
+}
+
+void abreGarra(){
+     Off(AMBAS_AS_DUAS_RODAS);
+     OnFwd(GARRA,potenciaGarra);
+     Wait(1100);
+     Off(MOTORES);
+     Wait(1000);
+}
+
+int fechaGarra(){
+     Off(AMBAS_AS_DUAS_RODAS);
+     OnFwd(GARRA,-potenciaGarra);
+     Wait(1400);
+     Off(MOTORES);
+     Wait(500);
+
+     if(Sensor(SENSOR_LUZ_FRENTE) <= verde)
+     {
+           return canoVerde;
+     }
+     else //if(Sensor(SENSOR_LUZ_FRENTE) <= vermelho && Sensor(SENSOR_LUZ_FRENTE) >= verde)
+     {
+           PlayTone(440, 2000);
+           Wait (1000);
+           return canoVermelho;
+     }
+}
+
+void vaiPraPosicao (int tipo, pos origem){
+     int dirIni = posicao.direcao;
+     int nLinhas = abs (posicao.linha - origem.linha);
+     int nColunas = abs (posicao.coluna - origem.coluna);
+
+}
+
+void andadinhaPraPegaCano(){
+     RotateMotor(AMBAS_AS_DUAS_RODAS,60, 180);
+}
+
+void andadinhaPraTrasAposCano(){
+     RotateMotor(AMBAS_AS_DUAS_RODAS,-60, 180);
+}
+
+void chegaNoPrimeiroCano(){
+
+    giraDirecao(sul);
+    int i;
+    int vezes;
+
+     if(casoT)
+     {
+                andaPraFrente(rotacaoMeio);
+                giraDirecao(leste);
+                andaPraFrente(rotacaoMeio);
+                giraDirecao(sul);
+                andaPraFrente(rotacaoMeio);
+                giraDirecao(oeste);
+     }
+     else if(casoA)
+          {
+                   vezes = 8 - posicao.coluna;
+                   andaPraFrente(rotacaoMeio);
+                   andaPraFrente(rotacaoMeio);
+
+                   giraDirecao(leste);
+
+                   repeat(vezes)
+                   {
+                        andaPraFrente(rotacaoMeio);
+                   }
+          }
+          else if(casoR)
+               {
+                       vezes = 8 - posicao.coluna;
+                       andaPraFrente(rotacaoMeio);
+                       andaPraFrente(rotacaoMeio);
+
+                       giraDirecao(leste);
+
+                       repeat(vezes)
+                       {
+                            andaPraFrente(rotacaoMeio);
+                       }
+               }
+               else
+               {
+                       vezes = posicao.coluna - 1;
+                       andaPraFrente(rotacaoMeio);
+                       andaPraFrente(rotacaoMeio);
+
+                       giraDirecao(oeste);
+
+                       repeat(vezes)
+                       {
+                            andaPraFrente(rotacaoMeio);
+                       }
+               }
+}
+
+void criaVetorVazamentoDuplo()
+{
+     if(casoT)
+     {
+          vetorVazamento[0].posic.coluna = 1;
+          vetorVazamento[0].posic.linha = 5;
+          vetorVazamento[0].cor =  vm;
+          vetorVazamento[0].status = 0;
+
+          vetorVazamento[1].posic.coluna = 1;
+          vetorVazamento[1].posic.linha = 6;
+          vetorVazamento[1].cor =  vm;
+          vetorVazamento[1].status = 0;
+
+          vetorVazamento[2].posic.coluna = 2;
+          vetorVazamento[2].posic.linha = 6;
+          vetorVazamento[2].cor =  vm;
+          vetorVazamento[2].status = 0;
+
+          vetorVazamento[3].posic.coluna = 3;
+          vetorVazamento[3].posic.linha = 6;
+          vetorVazamento[3].cor =  vm;
+          vetorVazamento[3].status = 0;
+
+          vetorVazamento[4].posic.coluna = 4;
+          vetorVazamento[4].posic.linha = 6;
+          vetorVazamento[4].cor =  vm;
+          vetorVazamento[4].status = 0;
+
+          vetorVazamento[5].posic.coluna = 5;
+          vetorVazamento[5].posic.linha = 5;
+          vetorVazamento[5].cor =  vm;
+          vetorVazamento[5].status = 0;
+
+          vetorVazamento[6].posic.coluna = 5;
+          vetorVazamento[6].posic.linha = 6;
+          vetorVazamento[6].cor =  vm;
+          vetorVazamento[6].status = 0;
+
+          vetorVazamento[7].posic.coluna = 6;
+          vetorVazamento[7].posic.linha = 5;
+          vetorVazamento[7].cor =  vd;
+          vetorVazamento[7].status = 0;
+
+          vetorVazamento[8].posic.coluna = 7;
+          vetorVazamento[8].posic.linha = 5;
+          vetorVazamento[8].cor =  vd;
+          vetorVazamento[8].status = 0;
+
+          vetorVazamento[9].posic.coluna = 8;
+          vetorVazamento[9].posic.linha = 5;
+          vetorVazamento[9].cor =  vd;
+          vetorVazamento[9].status = 0;
+
+          vetorVazamento[10].posic.coluna = 9;
+          vetorVazamento[10].posic.linha = 5;
+          vetorVazamento[10].cor =  vm;
+          vetorVazamento[10].status = 0;
+     }
+     else if(casoA)
+          {
+              vetorVazamento[0].posic.coluna = 8;
+              vetorVazamento[0].posic.linha = 5;
+              vetorVazamento[0].cor =  vm;
+              vetorVazamento[0].status = 0;
+
+              vetorVazamento[1].posic.coluna = 7;
+              vetorVazamento[1].posic.linha = 6;
+              vetorVazamento[1].cor =  vm;
+              vetorVazamento[1].status = 0;
+
+              vetorVazamento[2].posic.coluna = 6;
+              vetorVazamento[2].posic.linha = 6;
+              vetorVazamento[2].cor =  vm;
+              vetorVazamento[2].status = 0;
+
+              vetorVazamento[3].posic.coluna = 5;
+              vetorVazamento[3].posic.linha = 6;
+              vetorVazamento[3].cor =  vm;
+              vetorVazamento[3].status = 0;
+
+              vetorVazamento[4].posic.coluna = 4;
+              vetorVazamento[4].posic.linha = 5;
+              vetorVazamento[4].cor =  vm;
+              vetorVazamento[4].status = 0;
+
+              vetorVazamento[5].posic.coluna = 4;
+              vetorVazamento[5].posic.linha = 6;
+              vetorVazamento[5].cor =  vm;
+              vetorVazamento[5].status = 0;
+
+              vetorVazamento[6].posic.coluna = 9;
+              vetorVazamento[6].posic.linha = 5;
+              vetorVazamento[6].cor =  vd;
+              vetorVazamento[6].status = 0;
+
+              vetorVazamento[7].posic.coluna = 8;
+              vetorVazamento[7].posic.linha = 6;
+              vetorVazamento[7].cor =  vm;
+              vetorVazamento[7].status = 0;
+
+              vetorVazamento[8].posic.coluna = 3;
+              vetorVazamento[8].posic.linha = 5;
+              vetorVazamento[8].cor =  vd;
+              vetorVazamento[8].status = 0;
+
+              vetorVazamento[9].posic.coluna = 2;
+              vetorVazamento[9].posic.linha = 5;
+              vetorVazamento[9].cor =  vd;
+              vetorVazamento[9].status = 0;
+
+              vetorVazamento[10].posic.coluna = 1;
+              vetorVazamento[10].posic.linha = 5;
+              vetorVazamento[10].cor =  vd;
+              vetorVazamento[10].status = 0;
+          }
+          else if(casoR)
+               {
+                    vetorVazamento[0].posic.coluna = 9;
+                    vetorVazamento[0].posic.linha = 5;
+                    vetorVazamento[0].cor =  vm;
+                    vetorVazamento[0].status = 0;
+
+                    vetorVazamento[1].posic.coluna = 9;
+                    vetorVazamento[1].posic.linha = 6;
+                    vetorVazamento[1].cor =  vm;
+                    vetorVazamento[1].status = 0;
+
+                    vetorVazamento[2].posic.coluna = 8;
+                    vetorVazamento[2].posic.linha = 6;
+                    vetorVazamento[2].cor =  vm;
+                    vetorVazamento[2].status = 0;
+
+                    vetorVazamento[3].posic.coluna = 7;
+                    vetorVazamento[3].posic.linha = 6;
+                    vetorVazamento[3].cor =  vm;
+                    vetorVazamento[3].status = 0;
+
+                    vetorVazamento[4].posic.coluna = 6;
+                    vetorVazamento[4].posic.linha = 6;
+                    vetorVazamento[4].cor =  vm;
+                    vetorVazamento[4].status = 0;
+
+                    vetorVazamento[5].posic.coluna = 6;
+                    vetorVazamento[5].posic.linha = 5;
+                    vetorVazamento[5].cor =  vm;
+                    vetorVazamento[5].status = 0;
+
+                    vetorVazamento[6].posic.coluna = 6;
+                    vetorVazamento[6].posic.linha = 6;
+                    vetorVazamento[6].cor =  vm;
+                    vetorVazamento[6].status = 0;
+
+                    vetorVazamento[7].posic.coluna = 4;
+                    vetorVazamento[7].posic.linha = 5;
+                    vetorVazamento[7].cor =  vd;
+                    vetorVazamento[7].status = 0;
+
+                    vetorVazamento[8].posic.coluna = 3;
+                    vetorVazamento[8].posic.linha = 5;
+                    vetorVazamento[8].cor =  vd;
+                    vetorVazamento[8].status = 0;
+
+                    vetorVazamento[9].posic.coluna = 2;
+                    vetorVazamento[9].posic.linha = 5;
+                    vetorVazamento[9].cor =  vd;
+                    vetorVazamento[9].status = 0;
+
+                    vetorVazamento[10].posic.coluna = 1;
+                    vetorVazamento[10].posic.linha = 5;
+                    vetorVazamento[10].cor =  vd;
+                    vetorVazamento[10].status = 0;
+               }
+               else
+               {
+                    if(rio_inicio.coluna == 3)
+                    {
+                        vetorVazamento[0].posic.coluna = 2;
+                        vetorVazamento[0].posic.linha = 5;
+                        vetorVazamento[0].cor =  vm;
+                        vetorVazamento[0].status = 0;
+
+                        vetorVazamento[1].posic.coluna = 2;
+                        vetorVazamento[1].posic.linha = 6;
+                        vetorVazamento[1].cor =  vm;
+                        vetorVazamento[1].status = 0;
+
+                        vetorVazamento[2].posic.coluna = 3;
+                        vetorVazamento[2].posic.linha = 6;
+                        vetorVazamento[2].cor =  vm;
+                        vetorVazamento[2].status = 0;
+
+                        vetorVazamento[3].posic.coluna = 4;
+                        vetorVazamento[3].posic.linha = 6;
+                        vetorVazamento[3].cor =  vm;
+                        vetorVazamento[3].status = 0;
+
+                        vetorVazamento[4].posic.coluna = 5;
+                        vetorVazamento[4].posic.linha = 6;
+                        vetorVazamento[4].cor =  vm;
+                        vetorVazamento[4].status = 0;
+
+                        vetorVazamento[5].posic.coluna = 6;
+                        vetorVazamento[5].posic.linha = 5;
+                        vetorVazamento[5].cor =  vm;
+                        vetorVazamento[5].status = 0;
+
+                        vetorVazamento[6].posic.coluna = 6;
+                        vetorVazamento[6].posic.linha = 6;
+                        vetorVazamento[6].cor =  vm;
+                        vetorVazamento[6].status = 0;
+
+                        vetorVazamento[7].posic.coluna = 7;
+                        vetorVazamento[7].posic.linha = 5;
+                        vetorVazamento[7].cor =  vd;
+                        vetorVazamento[7].status = 0;
+
+                        vetorVazamento[8].posic.coluna = 8;
+                        vetorVazamento[8].posic.linha = 5;
+                        vetorVazamento[8].cor =  vd;
+                        vetorVazamento[8].status = 0;
+
+                        vetorVazamento[9].posic.coluna = 9;
+                        vetorVazamento[9].posic.linha = 5;
+                        vetorVazamento[9].cor =  vd;
+                        vetorVazamento[9].status = 0;
+
+                        vetorVazamento[10].posic.coluna = 1;
+                        vetorVazamento[10].posic.linha = 5;
+                        vetorVazamento[10].cor =  vd;
+                        vetorVazamento[10].status = 0;
+                   }
+                   else
+                   {
+                        vetorVazamento[0].posic.coluna = 3;
+                        vetorVazamento[0].posic.linha = 5;
+                        vetorVazamento[0].cor =  vm;
+                        vetorVazamento[0].status = 0;
+
+                        vetorVazamento[1].posic.coluna = 3;
+                        vetorVazamento[1].posic.linha = 6;
+                        vetorVazamento[1].cor =  vm;
+                        vetorVazamento[1].status = 0;
+
+                        vetorVazamento[2].posic.coluna = 4;
+                        vetorVazamento[2].posic.linha = 6;
+                        vetorVazamento[2].cor =  vm;
+                        vetorVazamento[2].status = 0;
+
+                        vetorVazamento[3].posic.coluna = 5;
+                        vetorVazamento[3].posic.linha = 6;
+                        vetorVazamento[3].cor =  vm;
+                        vetorVazamento[3].status = 0;
+
+                        vetorVazamento[4].posic.coluna = 6;
+                        vetorVazamento[4].posic.linha = 6;
+                        vetorVazamento[4].cor =  vm;
+                        vetorVazamento[4].status = 0;
+
+                        vetorVazamento[5].posic.coluna = 7;
+                        vetorVazamento[5].posic.linha = 5;
+                        vetorVazamento[5].cor =  vm;
+                        vetorVazamento[5].status = 0;
+
+                        vetorVazamento[6].posic.coluna = 7;
+                        vetorVazamento[6].posic.linha = 6;
+                        vetorVazamento[6].cor =  vm;
+                        vetorVazamento[6].status = 0;
+
+                        vetorVazamento[7].posic.coluna = 8;
+                        vetorVazamento[7].posic.linha = 5;
+                        vetorVazamento[7].cor =  vd;
+                        vetorVazamento[7].status = 0;
+
+                        vetorVazamento[8].posic.coluna = 9;
+                        vetorVazamento[8].posic.linha = 5;
+                        vetorVazamento[8].cor =  vd;
+                        vetorVazamento[8].status = 0;
+
+                        vetorVazamento[9].posic.coluna = 2;
+                        vetorVazamento[9].posic.linha = 5;
+                        vetorVazamento[9].cor =  vd;
+                        vetorVazamento[9].status = 0;
+
+                        vetorVazamento[10].posic.coluna = 1;
+                        vetorVazamento[10].posic.linha = 5;
+                        vetorVazamento[10].cor =  vd;
+                        vetorVazamento[10].status = 0;
+                   }
+               }
+
+}
+
+void criaVetorCano()
+{
+      for(kount = 0; kount < 12; kount++) //Inicializa o vetor dos canos ja posicionados na arena como ativos.
+          vetorCano[kount].status = 1;
+
+     if(casoA || casoR)
+     {
+          for(kount = 0; kount < 12; kount++)
+          {
+                 if(kount == 0 || kount == 1)
+                       vetorCano[kount].posic.direcao = leste;
+
+                 else if(kount > 1 || kount < 10)
+                            vetorCano[kount].posic.direcao = sul;
+                      else
+                            vetorCano[kount].posic.direcao = oeste;
+          }
+     }
+     else
+     {
+          for(kount = 0; kount < 12; kount++)
+          {
+                 if(kount == 0 || kount == 1)
+                       vetorCano[kount].posic.direcao = oeste;
+
+                 else if(kount > 1 || kount < 10)
+                            vetorCano[kount].posic.direcao = sul;
+                      else
+                            vetorCano[kount].posic.direcao = leste;
+          }
+     }
+}
+
+void deslocamento()
+{
+
+}
+
+void colocaCanoNaPosicao()
+{
+
+
+}
+
+task main()
+{
+     SetSensorLight(SENSOR_LUZ_BAIXO);
+     SetSensorLight(SENSOR_LUZ_FRENTE);
+     SetSensorLowspeed(BUSSOLA);
+
+     posicao.linha=8;                          /*Posicao de Inicio do robo de 0 a 9 nas linhas*/
+     posicao.coluna=1;                         /* e de  0 a 6 nas colunas*/
+     posicao.direcao = norte;
+
+     andaPraFrente(rotacaoMeio);
+     andaPraFrente(rotacaoMeio);
+
+     giraDirecao(oeste);
+
+     andaPraFrente(rotacaoMeio);
+
+     giraDirecao(norte);
+
+     andaPraFrente(rotacaoMeio-30);
+
+     giraDirecao(leste);
+
+     andaPraFrenteVerificandoRio();
+
+     chegaNoPrimeiroCano();
+     
+     andadinhaPraPegaCano();
+     
+     fechaGarra();
+     
+     andadinhaPraTrasAposCano();
+     
+     
+     
+}
+

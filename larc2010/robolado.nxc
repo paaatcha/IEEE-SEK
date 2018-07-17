@@ -1,0 +1,667 @@
+#include "NXCDefs.h"
+
+#define AMBAS_AS_DUAS_RODAS  OUT_AC
+#define RODA_DERECHA  OUT_A
+#define RODA_ESQUIERDA  OUT_C
+
+#define SENSOR_LUZ_DIR IN_1
+#define BUSSOLA        IN_2
+
+#define preto 40
+
+#define rotacaoMeio 200
+#define rotacaoPouco 100
+#define rotacaoPouquinho 10
+#define tempoAndaMeio 1700
+
+#define norte 1
+#define leste 2
+#define sul 3
+#define oeste 4
+
+#define PotenciaNormal 70
+#define PotenciaEmpurra 100
+
+
+     int norte_vec[] =  {180,186,186,186,192,200,200,198,199,
+                         186,188,187,187,189,194,195,196,196,
+                         186,188,186,182,184,192,167,167,194,
+                         162,166,166,185,162,189,193,166,193,
+                         163,165,164,162,163,187,190,166,191,
+                         163,168,166,164,164,187,169,165,189,
+                         164,166,166,165,164,187,167,164,188,
+                         163,166,166,187,184,186,166,163,189,
+                         166,166,166,189,187,186,166,165,189,
+                         166,166,166,188,186,187,186,188,187};
+
+     int sul_vec[] =    {346,349,349,348,348,352,352,352,352,
+                         347,349,349,347,348,352,352,352,352,
+                         347,348,348,346,347,350,000,352,352,
+                         357,0,359,355,000,350,000,352,352,
+                         0,359,359,355,359,349,000,359,350,
+                         0,0,0,356,358,349,358,000,350,
+                         350,351,351,356,356,348,358,000,350,
+                         000,000,000,356,347,348,348,000,349,
+                         000,000,000,349,347,349,349,000,349,
+                         000,000,000,348,347,348,348,349,349};
+
+     int leste_vec[] =  {278,279,279,278,281,284,285,284,284,
+                         278,279,279,278,281,284,285,285,285,
+                         278,279,278,278,278,282,284,285,285,
+                         281,280,277,278,279,282,282,284,283,
+                         275,275,275,279,278,278,284,284,283,
+                         281,284,284,278,277,277,279,279,279,
+                         282,282,283,280,278,279,281,284,280,
+                         285,283,281,280,278,280,281,282,280,
+                         284,284,284,280,279,280,281,282,280,
+                         283,283,282,279,280,278,280,280,280};
+
+     int oeste_vec[] =  {59,61,62,62,62,65,65,64,64,
+                         60,62,62,59,60,63,64,63,63,
+                         58,60,60,59,60,63,63,63,63,
+                         65,64,66,65,65,63,63,65,63,
+                         64,67,68,67,67,63,63,64,64,
+                         68,69,71,63,61,68,68,68,63,
+                         51,63,64,66,67,60,62,60,61,
+                         60,67,68,67,58,58,60,60,60,
+                         66,67,61,60,59,60,68,70,61,
+                         60,63,62,60,57,60,59,60,60};
+
+
+
+struct pos{
+        int linha;
+        int coluna;
+        int direcao;
+};
+
+pos posicao;
+
+
+int retorna_setpoint(){                /*retorna o setpoint da posicao atual do robo*/
+    switch (posicao.direcao){
+           case norte:return norte_vec[9*posicao.linha+posicao.coluna];
+           case leste:return leste_vec[9*posicao.linha+posicao.coluna];
+           case oeste:return oeste_vec[9*posicao.linha+posicao.coluna];
+           case sul:return sul_vec[9*posicao.linha+posicao.coluna];
+    }
+}
+
+// Calula parada da bussola pra nao da merda
+int diffAng(int a1, int a2)
+{
+    int diff = (a1 - a2)%360;
+    if(diff>180){
+          diff = diff -360;
+    }else{
+          if(diff<-180)
+               diff=diff+360;
+    }
+    return diff;
+}
+
+void imprime_valores()
+{
+    if(CurrentTick()%100<10){
+
+        ClearScreen();
+        TextOut(0, LCD_LINE1, "Linha: ");
+        NumOut(60, LCD_LINE1, posicao.linha);
+        TextOut(0, LCD_LINE2, "Coluna: ");
+        NumOut(60, LCD_LINE2, posicao.coluna);
+        TextOut(0, LCD_LINE3, "Direcao: ");
+        NumOut(60, LCD_LINE3, posicao.direcao);
+        TextOut(0, LCD_LINE5, "Bussola: ");
+        NumOut(60, LCD_LINE5, SensorHTCompass(BUSSOLA));
+        TextOut(0, LCD_LINE6, "Luz: ");
+        NumOut(60, LCD_LINE6, Sensor(SENSOR_LUZ_DIR));
+    }
+
+}
+
+void andaPraFrente(int tipo)                  /*anda ateh o meio do quadrado à frente do robo*/
+{
+    int setpoint = retorna_setpoint();// retornando o valor de referencia
+
+    int passouDaLinha = 0;
+    unsigned long rotacaoLinha;
+    int erro;
+
+        ClearScreen();
+        TextOut(0, LCD_LINE1, "Linha: ");
+        NumOut(60, LCD_LINE1, posicao.linha);
+        TextOut(0, LCD_LINE2, "Coluna: ");
+        NumOut(60, LCD_LINE2, posicao.coluna);
+        TextOut(0, LCD_LINE3, "Direcao: ");
+        NumOut(60, LCD_LINE3, posicao.direcao);
+        TextOut(0, LCD_LINE5, "Bussola: ");
+        NumOut(60, LCD_LINE5, SensorHTCompass(BUSSOLA));
+        TextOut(0, LCD_LINE6, "Luz: ");
+        NumOut(60, LCD_LINE6, Sensor(SENSOR_LUZ_DIR));
+//   Wait(2000);
+    while(true)
+    {
+        imprime_valores();
+
+         erro = diffAng(SensorHTCompass(BUSSOLA),setpoint);
+
+         OnFwd(RODA_ESQUIERDA,PotenciaNormal-1*erro);
+         OnFwd(RODA_DERECHA,PotenciaNormal+1*erro);
+
+         if(Sensor(SENSOR_LUZ_DIR)<preto)
+         {
+               if(!passouDaLinha)
+               {
+                   switch (posicao.direcao)
+                   {
+                          case norte: posicao.linha = posicao.linha - 1; break;
+                          case leste: posicao.coluna = posicao.coluna + 1; break;
+                          case oeste: posicao.coluna = posicao.coluna - 1; break;
+                          case sul: posicao.linha = posicao.linha + 1; break;
+                   }
+                   setpoint=retorna_setpoint();
+
+                   passouDaLinha = 1;
+                   rotacaoLinha = MotorRotationCount(RODA_DERECHA);
+               }
+
+         }
+
+
+         if(passouDaLinha)
+         {
+               if(abs(MotorRotationCount(RODA_DERECHA)-rotacaoLinha)>tipo){
+                   Off(AMBAS_AS_DUAS_RODAS);
+                   break;
+               }
+         }
+     }
+}
+
+void andaRobado(int tipo,int setpoint)                  /*anda ateh o meio do quadrado à frente do robo*/
+{
+
+    int passouDaLinha = 0;
+    unsigned long rotacaoLinha;
+    int erro;
+
+        ClearScreen();
+        TextOut(0, LCD_LINE1, "Linha: ");
+        NumOut(60, LCD_LINE1, posicao.linha);
+        TextOut(0, LCD_LINE2, "Coluna: ");
+        NumOut(60, LCD_LINE2, posicao.coluna);
+        TextOut(0, LCD_LINE3, "Direcao: ");
+        NumOut(60, LCD_LINE3, posicao.direcao);
+        TextOut(0, LCD_LINE5, "Bussola: ");
+        NumOut(60, LCD_LINE5, SensorHTCompass(BUSSOLA));
+        TextOut(0, LCD_LINE6, "Luz: ");
+        NumOut(60, LCD_LINE6, Sensor(SENSOR_LUZ_DIR));
+//   Wait(2000);
+    while(true)
+    {
+        imprime_valores();
+
+         erro = diffAng(SensorHTCompass(BUSSOLA),setpoint);
+
+         OnFwd(RODA_ESQUIERDA,PotenciaNormal-1*erro);
+         OnFwd(RODA_DERECHA,PotenciaNormal+1*erro);
+
+         if(Sensor(SENSOR_LUZ_DIR)<preto)
+         {
+               if(!passouDaLinha)
+               {
+                   switch (posicao.direcao)
+                   {
+                          case norte: posicao.linha = posicao.linha - 1; break;
+                          case leste: posicao.coluna = posicao.coluna + 1; break;
+                          case oeste: posicao.coluna = posicao.coluna - 1; break;
+                          case sul: posicao.linha = posicao.linha + 1; break;
+                   }
+                   setpoint=retorna_setpoint();
+
+                   passouDaLinha = 1;
+                   rotacaoLinha = MotorRotationCount(RODA_DERECHA);
+               }
+
+         }
+
+
+         if(passouDaLinha)
+         {
+               if(abs(MotorRotationCount(RODA_DERECHA)-rotacaoLinha)>tipo){
+                   Off(AMBAS_AS_DUAS_RODAS);
+                   break;
+               }
+         }
+     }
+}
+
+
+
+
+
+void marcha_reh(int tipo){          // parametros: struct de navegacao e numero de celulas a serem andadas.
+
+     int i,A,C,erro,media;
+     A=0;
+     C=0;
+     i=0;
+     ResetRotationCount(OUT_A);
+     ResetRotationCount(OUT_C);
+     while(true){
+          if (abs(MotorRotationCount(RODA_DERECHA))>tipo){
+             Off (AMBAS_AS_DUAS_RODAS);
+             break;
+          }
+          A = MotorRotationCount(OUT_A)-A;
+          C = MotorRotationCount(OUT_C)-C;
+          erro = A-C; //proveniente do encoder.
+          OnRev (OUT_C,50 + erro*(3/8));
+          OnRev (OUT_A,50 - erro*(3/8));
+
+     }
+     Off(OUT_AC);
+     ResetRotationCount(OUT_A);
+     ResetRotationCount(OUT_C);
+}
+
+int absMinMax (int erro){
+    if(abs(erro)>PotenciaNormal-15){
+         return PotenciaNormal-15;
+    }
+    else{
+         if(abs(erro)<25){
+              return 25;
+         }
+    }
+    return (abs(erro));
+}
+
+void giraDireita(int direcao)      /*Gira para a direcao (do robo) passada como parametro*/
+{
+
+    long tempoInicial = CurrentTick();
+    int setPoint;
+    int erro;
+    int giroerrado = 0;
+    switch (direcao)
+    {
+           case norte:setPoint = norte_vec[9*posicao.linha+posicao.coluna]; break;
+           case leste:setPoint = leste_vec[9*posicao.linha+posicao.coluna]; break;
+           case oeste:setPoint = oeste_vec[9*posicao.linha+posicao.coluna]; break;
+           case sul:setPoint = sul_vec[9*posicao.linha+posicao.coluna]; break;
+    }
+    erro=diffAng(SensorHTCompass(BUSSOLA),setPoint);
+     while(erro <= 0)                          //Problemas com o sul, porem se colocarmos !=setPoint as vezes o sensor passar reto
+     {
+          OnFwd(RODA_ESQUIERDA,absMinMax(erro));
+          OnFwd(RODA_DERECHA,-absMinMax(erro));
+          erro=diffAng(SensorHTCompass(BUSSOLA),setPoint);
+/*
+          if(CurrentTick()-tempoInicial > 6000)
+          {
+               OnFwd(AMBAS_AS_DUAS_RODAS,PotenciaNormal);
+               Wait (100);
+               Off(AMBAS_AS_DUAS_RODAS);
+               
+               tempoInicial = CurrentTick();
+          }
+*/
+     }
+     Off(AMBAS_AS_DUAS_RODAS);
+     posicao.direcao = direcao;
+}
+
+void giraEsquerda(int direcao)      /*Gira para a direcao (do robo) passada como parametro*/
+{
+    long tempoInicial = CurrentTick();
+    int setPoint;
+    int erro;
+    int giroerrado = 0;
+    switch (direcao)
+    {
+           case norte:setPoint = norte_vec[9*posicao.linha+posicao.coluna]; break;
+           case leste:setPoint = leste_vec[9*posicao.linha+posicao.coluna]; break;
+           case oeste:setPoint = oeste_vec[9*posicao.linha+posicao.coluna]; break;
+           case sul:setPoint = sul_vec[9*posicao.linha+posicao.coluna]; break;
+    }
+
+     erro=diffAng(SensorHTCompass(BUSSOLA),setPoint);
+     while(erro >= 0)                          //Problemas com o sul, porem se colocarmos !=setPoint as vezes o sensor passar reto
+     {
+         OnFwd(RODA_ESQUIERDA,-absMinMax(erro));
+         OnFwd(RODA_DERECHA,absMinMax(erro));
+         erro=diffAng(SensorHTCompass(BUSSOLA),setPoint);
+              
+/*          if(CurrentTick()-tempoInicial > 6000)
+          {
+               OnFwd(AMBAS_AS_DUAS_RODAS,PotenciaNormal);
+               Wait (100);
+               Off(AMBAS_AS_DUAS_RODAS);
+
+               tempoInicial = CurrentTick();
+          }
+*/
+     }
+     Off(AMBAS_AS_DUAS_RODAS);
+     posicao.direcao = direcao;
+}
+
+void giraDirecao(int direcao)
+{
+     if(posicao.direcao-direcao==-1 || posicao.direcao-direcao==3)
+     {
+         giraDireita(direcao);
+     }
+     else
+     {
+         giraEsquerda(direcao);
+     }
+     Off(AMBAS_AS_DUAS_RODAS);
+}
+
+void empurradinha()
+{
+    int setpoint = retorna_setpoint();
+    int erro;
+
+
+    while(Sensor(SENSOR_LUZ_DIR)<preto)
+    {
+      erro = diffAng(SensorHTCompass(BUSSOLA),setpoint);
+
+      OnRev(RODA_ESQUIERDA,PotenciaEmpurra-1*erro);
+      OnRev(RODA_DERECHA,PotenciaEmpurra+1*erro);
+    }
+    
+    while(Sensor(SENSOR_LUZ_DIR)>preto)
+    {
+      erro = diffAng(SensorHTCompass(BUSSOLA),setpoint);
+
+      OnRev(RODA_ESQUIERDA,PotenciaEmpurra-1*erro);
+      OnRev(RODA_DERECHA,PotenciaEmpurra+1*erro);
+    }
+
+    OnFwd(AMBAS_AS_DUAS_RODAS,PotenciaNormal);
+    Wait (300);
+    Off(AMBAS_AS_DUAS_RODAS);
+
+}
+
+void pegaCano (){
+     RotateMotor (OUT_B,30,280);
+}
+
+void desceCano (){
+     RotateMotor (OUT_B,-30,280);
+}
+
+task main()
+{
+     SetSensorLight(SENSOR_LUZ_DIR);
+     SetSensorLowspeed(BUSSOLA);
+
+     posicao.linha=8;                          /*Posicao de Inicio do robo de 0 a 9 nas linhas*/
+     posicao.coluna=7;                         /* e de  0 a 6 nas colunas*/
+     posicao.direcao = 1;
+     
+     goto inicio;
+
+     Wait(500);
+     
+     inicio:
+
+     desceCano();
+     andaPraFrente (rotacaoMeio);
+     RotateMotor (OUT_AC,40,155);// pegar o cano no inicio do quadrado
+
+     //Robo pegando o primeiro cano
+     pegaCano();
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+     giraDirecao(leste);// Indo descer o cano 1
+     andaPraFrente (rotacaoMeio);
+     
+     // Colocando o primeiro cano
+     desceCano();
+     RotateMotor (OUT_AC,-40,350);
+     posicao.coluna=7;
+
+     // Robo virando para pegar o duto estragado
+     giraDirecao(sul);
+     giraDirecao(oeste);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (39);
+     
+     // Robo pegando o duto estragado
+     pegaCano();
+     RotateMotor (OUT_AC,-40,290); // Se conseguir fazer a marchar_reh, arrumar aqui!
+
+     // Atualizando posições
+     posicao.coluna=6;
+     posicao.linha=5;
+     posicao.direcao=4;
+     // Somente por precaução
+
+     giraDirecao (sul);
+
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+
+     giraDirecao (leste);
+     
+     andaPraFrente (rotacaoMeio);
+     
+     giraDirecao (sul);
+     
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (100);
+     giraDirecao (leste);
+     andaPraFrente (150);
+
+
+     // Colocando o cano na área amarela
+
+     desceCano();
+
+     RotateMotor (OUT_AC,-40,350);
+     posicao.linha = 8;
+     posicao.coluna = 7;
+     posicao.direcao = 2;
+// ***********************   FIM DA RETIRADA DO DUTO BUGADO ********************************
+
+     // voltando com o robo para posição ond o duto estava para empurrar a caixa
+
+     giraDirecao (norte);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+     giraDirecao (oeste);
+
+     posicao.linha = 5;
+     posicao.coluna = 7;
+     posicao.direcao = 4;
+     
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+
+
+
+     // Aqui começa a empurrar a caixa
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (260);
+     posicao.linha = 5;
+     posicao.coluna = 4;
+     posicao.direcao = 4;
+     
+     RotateMotor (OUT_AC,-40,25);// dando uma arrumadinha pra ele nao pegar o bloco
+     giraDirecao (norte);
+     andaPraFrente (280);
+     giraDirecao (oeste);
+     andaPraFrente (230);
+     giraDirecao (sul);
+     andaPraFrente (260);
+     RotateMotor (OUT_AC,-40,25);
+     giraDirecao (leste);
+
+     posicao.linha = 5;
+     posicao.coluna = 2;
+     posicao.direcao = 2;
+
+    // TERMINOU DE EMPURRAR A PRIMEIRA CAIXA
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+
+     posicao.linha = 5;
+     posicao.coluna = 7;
+     posicao.direcao = 2;
+
+     giraDirecao(norte);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (270);
+     giraDirecao (oeste);
+     andaPraFrente (230);
+
+     // se for necessário na hora :RotateMotor (OUT_AC,-40,25);
+
+     giraDirecao (sul);
+     andaPraFrente (rotacaoMeio);
+     andaPraFrente (270);
+     RotateMotor (OUT_AC,-40,25);
+     giraDirecao (leste);
+     andaPraFrente (260);
+     giraDirecao (sul);
+     andaPraFrente (240);
+     giraDirecao (oeste);
+     andaPraFrente(rotacaoMeio);
+     andaPraFrente(rotacaoMeio);
+     andaPraFrente(260);
+     RotateMotor (OUT_AC,-40,25);
+     giraDirecao (sul);
+     andaPraFrente(260);
+     giraDirecao (oeste);
+     andaPraFrente(rotacaoMeio);
+     giraDirecao (norte);
+     andaPraFrente(rotacaoMeio);
+     andaPraFrente(260);
+     RotateMotor (OUT_AC,-40,25);
+     giraDirecao(leste);
+     andaPraFrente(260);
+     giraDirecao(norte);
+     andaPraFrente(rotacaoMeio);
+     giraDirecao(oeste);
+     andaPraFrente(280);
+     RotateMotor (OUT_AC,-40,25);
+     giraDirecao(sul);
+     andaPraFrente(260);
+     giraDirecao(oeste);
+     andaPraFrente(rotacaoMeio);
+     giraDirecao(norte);
+
+     
+     posicao.linha = 4;
+     posicao.coluna = 2;
+     posicao.direcao = 1;
+     
+     // Quando ele coloca o cano ele fica um pouquinho pra tras do quadrado virando errado e atrapalhando a pegar o proximo cano
+     // portanto aqui tem q da umas robadas aumentei 40 na rotação de empurrar a caixa e mudei a bussula de leste pra ele
+     // tender um pouco pra esquerda para facilitar a entrada do outro duto.
+     andaPraFrente(300);
+     RotateMotor (OUT_AC,-40,25);
+
+     posicao.linha = 3;
+     posicao.coluna = 2;
+     posicao.direcao = 1;
+
+     //CAIXAS NOS DEVIDOS LUGARES!!!!
+
+     // Indo pegar o cano
+     giraDirecao(oeste);
+     andaRobado(340,70);
+     //RotateMotor (OUT_AC,40,160);
+     pegaCano();
+     RotateMotor (OUT_AC,-40,80); // rezinha
+
+     posicao.linha = 3;
+     posicao.coluna = 1;
+     posicao.direcao = 4;
+
+     giraDirecao(sul);
+     giraDirecao(leste);
+     andaPraFrente(100);
+     desceCano();
+     RotateMotor (OUT_AC,-40,180); // rezinha
+     // *************Coloucou o primeiro cano****************
+     
+
+     posicao.linha = 3;
+     posicao.coluna = 1;
+     posicao.direcao = 2;
+     
+     giraDirecao(sul);
+     andaPraFrente(240);// ver aqui rotação importante para nao errar
+     giraDirecao(oeste);
+     andaRobado(rotacaoMeio,73);
+
+     //gambiarra
+     posicao.linha = 4;
+     posicao.coluna = 1;
+     posicao.direcao = 4;
+
+     andaRobado(rotacaoMeio,72);
+     pegaCano();
+     giraDirecao(norte);
+     giraDirecao(leste);
+     andaRobado(rotacaoMeio,279);
+
+     //gambiarra
+     posicao.linha = 4;
+     posicao.coluna = 0;
+     posicao.direcao = 2;
+     
+     andaRobado(rotacaoMeio,280);
+     andaRobado(100,280);
+     desceCano();
+     RotateMotor (OUT_AC,-40,225); // rezinha
+     //******************** Penúltimo  cano posicionado!*****************
+     
+     posicao.linha = 4;
+     posicao.coluna = 1;
+     posicao.direcao = 2;
+
+     giraDirecao(norte);
+     andaPraFrente(rotacaoMeio);
+     giraDirecao(oeste);
+     andaPraFrente(rotacaoMeio);
+     giraDirecao(sul);
+     andaPraFrente(330);
+     //RotateMotor (OUT_AC,40,155);
+     pegaCano();
+     RotateMotor (OUT_AC,40,310);
+
+     posicao.linha = 5;
+     posicao.coluna = 0;
+     posicao.direcao = 3;
+     
+     giraDirecao(leste);
+     andaRobado(rotacaoMeio,282);
+     andaRobado(100,280);
+     desceCano ();
+     
+     RotateMotor (OUT_A,40,35);
+     
+     RotateMotor (OUT_AC,-40,300);
+     
+     pegaCano ();
+
+
+
+     
+    //FIM DO DESAFIO.
+}
+
