@@ -9,7 +9,9 @@ Every year the IEEE releases a new rule for a new challenge, however, the essenc
 The robots used light, touch and compass sensors. In addition, the used a bluetooth connection in order to communicate with each other. We programed them using a C-based-language called NXC.
 
 You can see the robots solving the problem in 2010:
+
 [![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/wrlccVcyYqc/0.jpg)](https://www.youtube.com/watch?v=wrlccVcyYqc)
 
 and in 2011:
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/pK7MJCqqg3g/0.jpg)](https://www.youtube.com/watch?v=pK7MJCqqg3g)
+
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/shFr-67LWB4/0.jpg)](https://www.youtube.com/watch?v=shFr-67LWB4)
