@@ -10,7 +10,7 @@ The robots used light, touch and compass sensors. In addition, the used a blueto
 
 You can see the robots solving the problem in 2010:
 
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/wrlccVcyYqc/0.jpg)](https://www.youtube.com/watch?v=wrlccVcyYqc)
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/pK7MJCqqg3g/0.jpg)](https://www.youtube.com/watch?v=pK7MJCqqg3g)
 
 and in 2011:
 
